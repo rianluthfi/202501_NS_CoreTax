@@ -4,12 +4,14 @@
 define([
     'N/search',
     'N/record',
+    'N/xml',
     'SuiteScripts/Coretax/moment'
 ],
     
     (
         search,
         record,
+        xml,
         moment
     ) => {
 
@@ -166,7 +168,7 @@ define([
                 ]
             });
             var searchResultCount = customrecord_ct_generate_xmlSearchObj.runPaged().count;
-            log.debug("customrecord_ct_generate_xmlSearchObj result count",searchResultCount);
+            // log.debug("customrecord_ct_generate_xmlSearchObj result count",searchResultCount);
             customrecord_ct_generate_xmlSearchObj.run().each(function(result){
                 // .run().each has a limit of 4,000 results
 
@@ -220,6 +222,50 @@ define([
             });
 
             return data;
+        }
+
+        const getCoreTaxInvoiceItembyID = (ID_invoice) => {
+            var invoiceSearchObj = search.create({
+                type: "invoice",
+                settings:[{"name":"consolidationtype","value":"NONE"},{"name":"includeperiodendtransactions","value":"F"}],
+                filters:
+                [
+                    ["mainline","is","F"], 
+                    "AND", 
+                    ["type","anyof","CustInvc"], 
+                    "AND", 
+                    ["subsidiary","anyof","3"], 
+                    "AND", 
+                    ["internalid","anyof",ID_invoice], 
+                    "AND", 
+                    ["taxline","is","F"], 
+                    "AND", 
+                    ["cogs","is","F"]
+                ],
+                columns:
+                [
+                    search.createColumn({name: "memo", label: "Memo"}),
+                    search.createColumn({name: "unitid", label: "Unit Id"}),
+                    search.createColumn({name: "unit", label: "Units"}),
+                    search.createColumn({name: "unitabbreviation", label: "Units"}),
+                    search.createColumn({name: "quantity", label: "Quantity"}),
+                    search.createColumn({name: "fxamount", label: "Amount (Foreign Currency)"}),
+                    search.createColumn({name: "taxamount", label: "Amount (Tax)"}),
+                    search.createColumn({name: "taxcode", label: "Tax Item"}),
+                    search.createColumn({
+                        name: "rate",
+                        join: "taxItem",
+                        label: "Rate"
+                    })
+                ]
+            });
+            var searchResultCount = invoiceSearchObj.runPaged().count;
+            log.debug("invoiceSearchObj result count",searchResultCount);
+            invoiceSearchObj.run().each(function(result){
+                // .run().each has a limit of 4,000 results
+                log.debug('result item '+typeof result, result);
+                return true;
+            });
         }
 
         const getDataCustomerbyID = (ID_customer) => {
@@ -298,23 +344,29 @@ define([
 
         const generateXMLContent = (ID_record_xml) => {
 
-            var contents = "";
+            let xmlString = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+                '<TaxInvoiceBulk xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n' +
+                '   <TIN>0030404859011000</TIN>\n' +
+                '   <ListOfTaxInvoice>\n'+
+                '       <TaxInvoice>\n'+
+                            contentTaxInvoice(ID_record_xml)+
+                '       </TaxInvoice>\n'+
+                '   </ListOfTaxInvoice>\n'+
+                '</TaxInvoiceBulk>';
 
-            contents = contentOpening(contents);
-
-            contents = contentTaxInvoice(contents, ID_record_xml);
-
-            contents = contentClosing(contents);
-
-            return contents;
+            log.debug("Generated XML String", xmlString);
+            return xmlString;
         }
 
         const contentOpening = (contents) => {
             contents += '<?xml version="1.0" encoding="utf-8"?>';
             contents += '\n<TaxInvoiceBulk xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">';
-            contents += '\n<TIN>0030404859011000</TIN>';
+            contents += '\n<TIN>0030404859011003</TIN>';
             contents += '\n<ListOfTaxInvoice>';
             contents += '\n<TaxInvoice>';
+
+            log.debug('contents '+typeof contents, contents);
+            return error;
 
             return contents;
         }
@@ -327,7 +379,9 @@ define([
             return contents;
         }
 
-        const contentTaxInvoice = (contents, ID_record_xml) => {
+        const contentTaxInvoice = (ID_record_xml) => {
+
+            log.debug('ID_record_xml '+typeof ID_record_xml, ID_record_xml);
             
             var data_record_xml = getRecordXMLbyID(ID_record_xml);
 
@@ -336,41 +390,66 @@ define([
             var id_invoices = JSON.parse(data_record_xml.id_invoices);
 
             log.debug('id_invoices '+typeof id_invoices, id_invoices);
-
             log.debug('id_invoices.length '+typeof id_invoices.length, id_invoices.length);
 
-            for (var i = 0; i < id_invoices.length; i++){
-                // log.debug(id_invoices[i]);
+            let taxInvoice = '';
 
-                var invoiceHeader = getCoreTaxInvoiceHeaderbyID(id_invoices[i]);
-                log.debug('invoiceHeader '+typeof invoiceHeader, invoiceHeader);
+            for (let i = 0; i < id_invoices.length; i++){
+                var dataInvoiceHeader = getCoreTaxInvoiceHeaderbyID(id_invoices[i]);
+                log.debug('dataInvoiceHeader '+typeof dataInvoiceHeader, dataInvoiceHeader);
 
-                var dataCustomer = getDataCustomerbyID(invoiceHeader.entity);
+                var dataCustomer = getDataCustomerbyID(dataInvoiceHeader.entity);
                 log.debug('dataCustomer '+typeof dataCustomer, dataCustomer);
+
+                taxInvoice += '<TaxInvoiceDate>'+dataInvoiceHeader.trandate+'</TaxInvoiceDate>\n'+
+                    '<TaxInvoiceOpt>Normal</TaxInvoiceOpt>\n'+
+                    '<TrxCode>04</TrxCode>\n'+
+                    '<AddInfo/>\n'+
+                    '<CustomDoc/>\n'+
+                    '<RefDesc>'+dataInvoiceHeader.tranid+'</RefDesc>\n'+
+                    '<FacilityStamp/>\n'+
+                    '<SellerIDTKU>0030404859011000000000</SellerIDTKU>\n'+
+                    '<BuyerTin>'+dataCustomer.buyer_tin+'</BuyerTin>\n'+
+                    '<BuyerDocument>TIN</BuyerDocument>\n'+
+                    '<BuyerCountry>IDN</BuyerCountry>\n'+
+                    '<BuyerDocumentNumber>'+dataInvoiceHeader.tranid+'</BuyerDocumentNumber>\n'+
+                    '<BuyerName>'+dataCustomer.buyer_name+'</BuyerName>\n'+
+                    '<BuyerAdress>'+dataCustomer.buyer_adress+'</BuyerAdress>\n'+
+                    '<BuyerEmail/>\n'+
+                    '<BuyerIDTKU>0027518976062000000000</BuyerIDTKU>\n'+
+                    '<ListOfGoodService>\n'+
+                        contentListOfGoodService(dataInvoiceHeader.id)+
+                    '</ListOfGoodService>\n';
+
+                log.debug('taxInvoice '+typeof taxInvoice, taxInvoice);
+                return error;
             }
 
-            return contents;
+            return taxInvoice;
+        }
 
-            /**
-                <TaxInvoiceDate>2025-01-21</TaxInvoiceDate>
-                <TaxInvoiceOpt>Normal</TaxInvoiceOpt>
-                <TrxCode>04</TrxCode>
-                <AddInfo />
-                <CustomDoc />
-                <RefDesc>INV/2025/ID/00022</RefDesc>
-                <FacilityStamp />
-                <SellerIDTKU>0030404859011000000000</SellerIDTKU>
-                <BuyerTin>0027518976062000</BuyerTin>
-                <BuyerDocument>TIN</BuyerDocument>
-                <BuyerCountry>IDN</BuyerCountry>
-                <BuyerDocumentNumber>-</BuyerDocumentNumber>
-                <BuyerName>-</BuyerName>
-                <BuyerAdress>GEDUNG THE EAST LT.17 JL. DR. IDE ANAK AGUNG GDE AGUNG KAV.E.3.2 Blok - No.01
-                    RT:000 RW:000 Kel.KUNINGAN TIMUR Kec.SETIABUDI Kota/Kab.JAKARTA SELATAN DKI JAKARTA RAYA
-                    12950</BuyerAdress>
-                <BuyerEmail />
-                <BuyerIDTKU>0027518976062000000000</BuyerIDTKU>
-             */
+        const contentListOfGoodService = (ID_invoice) => {
+
+            var items = getCoreTaxInvoiceItembyID(ID_invoice);
+            log.debug('items '+typeof items, items);
+
+            let ListOfGoodService = '<GoodService>\n'+
+                    '<Opt>B</Opt>\n'+
+                    '<Code>000000</Code>\n'+
+                    '<Name>SA PREFER SUPT AES R10 BASIC TSAPI 1YR PREPD</Name>\n'+
+                    '<Unit>UM.0033</Unit>\n'+
+                    '<Price>66773.33</Price>\n'+
+                    '<Qty>60</Qty>\n'+
+                    '<TotalDiscount>0</TotalDiscount>\n'+
+                    '<TaxBase>4006400</TaxBase>\n'+
+                    '<OtherTaxBase>3672533.33</OtherTaxBase>\n'+
+                    '<VATRate>12</VATRate>\n'+
+                    '<VAT>440704</VAT>\n'+
+                    '<STLGRate>0</STLGRate>\n'+
+                    '<STLG>0</STLG>\n'+
+                '</GoodService>\n';
+
+            return ListOfGoodService;
         }
 
         return {

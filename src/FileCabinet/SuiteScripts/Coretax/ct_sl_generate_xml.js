@@ -40,9 +40,15 @@ define([
 
             var scriptObj = runtime.getCurrentScript();
 
+            var temp_cut_off_date = scriptObj.getParameter({name : 'custscript_ct_date_cut_off'});
+            var cut_off_date = temp_cut_off_date ? temp_cut_off_date : "1/1/2025";
+
+            var temp_page_size = scriptObj.getParameter({name : 'custscript_ct_page_size'});
+            var page_size = temp_page_size ? temp_page_size : 10;
+
             var GLOBAL_PARAM = ({
-                'CUT_OFF_DATE'  : moment.utc(scriptObj.getParameter({name : 'custscript_ct_date_cut_off'})).format(user_date_format),
-                'PAGE_SIZE'     : scriptObj.getParameter({name : 'custscript_ct_page_size'})
+                'CUT_OFF_DATE'  : moment.utc(cut_off_date).format(user_date_format),
+                'PAGE_SIZE'     : page_size
             });
 
             if (scriptContext.request.method === 'GET') {

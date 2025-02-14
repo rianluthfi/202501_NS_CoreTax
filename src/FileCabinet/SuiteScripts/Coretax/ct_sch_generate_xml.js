@@ -28,8 +28,8 @@ define([
 
             log.debug('parameter '+typeof parameter, parameter);
 
-           var contentXML = ct_modul.generateXMLContent(parameter.id);
-           log.debug('contentXML '+typeof contentXML, contentXML);
+            var contentXML = ct_modul.generateXMLContent(parameter.id);
+            log.debug('contentXML '+typeof contentXML, contentXML);
 
             var fileObj = file.create({
                 //To make each file unique and avoid overwriting, append date on the title
